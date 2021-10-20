@@ -1,0 +1,6 @@
+"0","aml_representation <- subset(sample_representation, group == ""AML sample"")"
+"0","aml_min <- which.min(aml_representation$stat)"
+"0","aml_max <- which.max(aml_representation$stat)"
+"0","biplot(nmf5, factors = c(aml_min, aml_max), matrix = ""h"", group_by = colnames(aml)) + "
+"0","  theme(aspect.ratio = 1) + "
+"0","  scale_color_manual(values = c(""gray"", ""#F8766D"", ""#C77CFF"", ""#7CAE00""))"

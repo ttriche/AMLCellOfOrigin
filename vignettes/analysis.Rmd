@@ -1,0 +1,137 @@
+---
+title: "Analysis pipeline"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{analysis}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## Getting started
+
+The objective is to classify AML cells based on cell of origin using 5 each of reference GMPs, MEPs, and LMPPs.
+
+This data is included in the RcppML package as `data(aml)`. Use RcppML version 0.5.1 or later, this is the development version on GitHub.
+
+```{R, warning = FALSE, message = FALSE}
+# devtools::install_github("zdebruine/AMLCellOfOrigin")
+library(AMLCellOfOrigin)
+library(RcppML)
+library(ggplot2)
+library(cowplot)
+library(uwot)
+data(aml)
+str(aml)
+```
+
+Note that column names have been assigned to the category to which they belong ("AML", "GMP", "MEP", "LMPP"), and rownames have been removed.
+
+```{R}
+table(colnames(aml))
+```
+
+There are 123 AML samples and 5 each of the reference cell types.
+
+## Run NMF
+
+Let's run rank-5 NMF to learn a few factors describing AML and normal cell DMRs.
+
+```{R}
+nmf5 <- nmf(aml, k = 5, seed = 1:10, tol = 1e-10)
+```
+
+Plot a UMAP on NMF coordinates:
+
+```{R, fig.width = 4, fig.height = 3}
+set.seed(123)
+plot_umap(nmf5, n_neighbors = 10, metric = "cosine") + 
+  theme(aspect.ratio = 1) +
+  scale_color_manual(values = c("gray", "#F8766D", "#C77CFF", "#7CAE00"))
+```
+
+We can also visualize the mean representation of each sample type in each NMF factor using the `nmf` S4 `summary` method, and the associated `plot` method for the result of the `summary`.
+
+```{R, fig.width = 4, fig.height = 3, message = FALSE, warning = FALSE}
+sample_representation <- summary(nmf5, group_by = colnames(aml), stat = "mean")
+plot(sample_representation) +
+  scale_fill_manual(values = c("gray", "#F8766D", "#C77CFF", "#7CAE00"))
+  theme(aspect.ratio = 1)
+```
+
+A biplot is a nice way to visualize which factors can discriminate between different sample types:
+
+```{R, fig.width = 4, fig.height = 3}
+aml_representation <- subset(sample_representation, group == "AML sample")
+aml_min <- which.min(aml_representation$stat)
+aml_max <- which.max(aml_representation$stat)
+biplot(nmf5, factors = c(aml_min, aml_max), matrix = "h", group_by = colnames(aml)) + 
+  theme(aspect.ratio = 1) + 
+  scale_color_manual(values = c("gray", "#F8766D", "#C77CFF", "#7CAE00"))
+```
+
+## Signal source separation with NMF
+
+Exclude the NMF factor with the least AML signal, and plot a UMAP reduction:
+
+```{R, fig.width = 4, fig.height = 3}
+set.seed(123)
+plot_umap(nmf5[-aml_min], n_neighbors = 10, metric = "cosine") + 
+  theme(aspect.ratio = 1) +
+  scale_color_manual(values = c("gray", "#F8766D", "#C77CFF", "#7CAE00"))
+```
+
+We can also cluster samples using graph-based clustering on NMF coordinates:
+
+```{R}
+clusters <- cluster_nmf(nmf5[-aml_min], aml, resolution = 0.1)
+colnames(nmf5@h) <- paste0("cluster", clusters)
+plot_umap(nmf5[-aml_min], n_neighbors = 10, metric = "cosine")
+```
+
+Unfortunately, we can see that graph-based clustering still distinguishes between AML and normal cell types, showing that the UMAP plot doesn't tell us everything.
+
+## Higher-rank NMF
+
+Use cross-validation to determine the optimal rank for NMF. We can use the `RcppML::crossValidate` function, and plot the result using the default `plot` method:
+
+```{R, fig.width = 4, fig.height = 3, warning = FALSE, message = FALSE}
+cv <- crossValidate(aml, 2:15, seed = 123, reps = 5)
+plot(cv) + 
+  theme(aspect.ratio = 1) + scale_y_continuous(limits = c(0.02, 0.03)) +
+  stat_smooth(se = F, color = "black")
+```
+
+It appears that a rank of 10 might actually be ideal. Let's do what we've done above at rank 10:
+
+```{R, fig.width = 4, fig.height = 3}
+nmf10 <- nmf(aml, k = 10, seed = 123)
+plot(summary(nmf10, group_by = colnames(aml), stat = "mean")) +
+  scale_fill_manual(values = c("gray", "#F8766D", "#C77CFF", "#7CAE00")) +
+  theme(aspect.ratio = 1)
+```
+
+Choose 3 factors, one that captures cancer and each cell type, and plot on UMAP coordinates:
+
+```{R, fig.width = 4, fig.height = 3}
+set.seed(123)
+plot_umap(nmf10[c(1, 7, 10)], n_neighbors = 10, metric = "cosine") + 
+  theme(aspect.ratio = 1) +
+  scale_color_manual(values = c("gray", "#F8766D", "#C77CFF", "#7CAE00"))
+```
+
+## Future directions
+
+These results are not very preliminary.
+
+A better method involves integrative NMF. See the LIGER method.
+
+I need to determine whether integrative NMF is something I want to implement myself (to take advantage of cross-validation for hyperparameter determination, and for speed) or simply use LIGER.
+
+LIGER is the way forward. It can extract two NMF models -- one shared between AML and reference cells, and another containing signals separating the two.

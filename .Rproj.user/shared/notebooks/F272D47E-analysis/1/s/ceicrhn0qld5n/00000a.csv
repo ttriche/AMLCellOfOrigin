@@ -1,0 +1,8 @@
+"0","clusters <- cluster_nmf(nmf5[-aml_min], aml, resolution = 0.1)"
+"2","Computing nearest neighbor graph
+"
+"1",""
+"2","Computing SNN
+"
+"0","colnames(nmf5@h) <- paste0(""cluster"", clusters)"
+"0","plot_umap(nmf5[-aml_min], n_neighbors = 10, metric = ""cosine"")"
