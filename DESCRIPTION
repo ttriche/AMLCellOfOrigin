@@ -12,7 +12,15 @@ Description: Data and vignettes with helper functions to determine AML cell-of-o
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.1.2
+Imports:
+    RcppML,
+    Seurat,
+    cowplot,
+    ggplot2,
+    uwot,
+    Matrix
 Suggests: 
     knitr,
     rmarkdown
 VignetteBuilder: knitr
+License: GPL (>= 2)
