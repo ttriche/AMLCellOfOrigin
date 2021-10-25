@@ -1,4 +1,0 @@
-"0","set.seed(123)"
-"0","plot_umap(nmf10[c(1, 7, 10)], n_neighbors = 10, metric = ""cosine"") + "
-"0","  theme(aspect.ratio = 1) +"
-"0","  scale_color_manual(values = c(""gray"", ""#F8766D"", ""#C77CFF"", ""#7CAE00""))"

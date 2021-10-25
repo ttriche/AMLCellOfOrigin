@@ -97,9 +97,22 @@ plot_umap(nmf5[-aml_min], n_neighbors = 10, metric = "cosine")
 
 Unfortunately, we can see that graph-based clustering still distinguishes between AML and normal cell types, showing that the UMAP plot doesn't tell us everything.
 
-## Higher-rank NMF
+## Linked NMF
 
-Use cross-validation to determine the optimal rank for NMF. We can use the `RcppML::crossValidate` function, and plot the result using the default `plot` method:
+Linked NMF (lNMF) is a method for extracting signals that are shared or unique between multiple datasets in separate factor models.
+
+We will put AML cells in one model and reference cells in the other:
+
+```{R}
+A <- list(
+  aml[, which(colnames(aml) == "AML sample")],
+  aml[, which(colnames(aml) != "AML sample")]
+)
+```
+
+Now we will attempt to determine optimal ranks for our system. We will first identify the maximum ideal combined rank, then the maximum ideal rank for each dataset.
+
+Use cross-validation to determine the optimal total rank for the linked NMF problem. We can use the `RcppML::crossValidate` function, and plot the result using the default `plot` method:
 
 ```{R, fig.width = 4, fig.height = 3, warning = FALSE, message = FALSE}
 cv <- crossValidate(aml, 2:15, seed = 123, reps = 5)
@@ -108,30 +121,104 @@ plot(cv) +
   stat_smooth(se = F, color = "black")
 ```
 
-It appears that a rank of 10 might actually be ideal. Let's do what we've done above at rank 10:
+It appears that a total rank of about 6-10 is ideal.
+
+Now let's try to determine how to split up the unique vs. shared model ranks within those 6-10 factors:
+
+```{R, fig.width = 4, fig.height = 3, warning = FALSE, message = FALSE}
+cv <- crossValidate(A[[1]], 2:15, seed = 123, reps = 5)
+plot(cv) + 
+  theme(aspect.ratio = 1) + scale_y_continuous(limits = c(0.022, 0.035)) +
+  stat_smooth(se = F, color = "black")
+```
+
+For the cancer cells, a rank of 5 seems to reliably capture most of the signal of interest.
+
+```{R, fig.width = 4, fig.height = 3, warning = FALSE, message = FALSE}
+cv <- crossValidate(A[[2]], 2:10, seed = 123, reps = 5)
+plot(cv) + 
+  theme(aspect.ratio = 1) + scale_y_continuous(limits = c(0.001, 0.005)) +
+  stat_smooth(se = F, color = "black")
+```
+
+For the reference cells, a rank of 3 is ideal.
+
+Now we can run linked NMF. We will first run it with a rank of 3 for shared signal, 2 for cancer signal, and 2 for reference cell signal. This will compress the signal in both the cancer and reference samples, forcing it to be "shared" between the two datasets.
+
+```{R}
+lnmf_model <- lnmf(A, k_wh = 3, k_uv = c(2, 2), seed = 123)
+```
+
+Let's see how factors are enriched for shared signals across cancer and non-cancer samples:
 
 ```{R, fig.width = 4, fig.height = 3}
-nmf10 <- nmf(aml, k = 10, seed = 123)
-plot(summary(nmf10, group_by = colnames(aml), stat = "mean")) +
+nmf_model <- as(lnmf_model, "nmf")
+plot(summary(nmf_model, group_by = colnames(aml), stat = "mean")) +
   scale_fill_manual(values = c("gray", "#F8766D", "#C77CFF", "#7CAE00")) +
   theme(aspect.ratio = 1)
 ```
 
-Choose 3 factors, one that captures cancer and each cell type, and plot on UMAP coordinates:
+Now we can run a UMAP reduction on our shared feature models:
 
 ```{R, fig.width = 4, fig.height = 3}
 set.seed(123)
-plot_umap(nmf10[c(1, 7, 10)], n_neighbors = 10, metric = "cosine") + 
+plot_umap(nmf_model[1:3], n_neighbors = 10, metric = "cosine") + 
   theme(aspect.ratio = 1) +
   scale_color_manual(values = c("gray", "#F8766D", "#C77CFF", "#7CAE00"))
 ```
 
-## Future directions
+Cluster with recursive spectral bipartitioning:
 
-These results are not very preliminary.
+```{R}
+div_cluster <- function(data, min_samples = 2){
+  clusters <- dclust(data, min_samples = min_samples)
+  names(clusters) <- paste0("cluster", 1:length(clusters))
+  clust <- c()
+  for(i in 1:length(clusters)){
+    v <- clusters[[i]]$samples
+    names(v) <- rep(names(clusters)[i], length(v))
+    clust <- c(clust, v)
+  }
+  names(sort(clust))
+}
 
-A better method involves integrative NMF. See the LIGER method.
+colnames(nmf_model@h) <- div_cluster(nmf_model@h[1:3,], min_samples = 30)
+p1 <- plot_umap(nmf_model[1:3], n_neighbors = 10, metric = "cosine") + 
+  ggtitle("recursive spectral\nbipartitioning") +
+  theme(plot.title = element_text(hjust = 0.5), aspect.ratio = 1)
+```
 
-I need to determine whether integrative NMF is something I want to implement myself (to take advantage of cross-validation for hyperparameter determination, and for speed) or simply use LIGER.
+Cluster with weighted Jaccard overlap using hierarchical clustering:
 
-LIGER is the way forward. It can extract two NMF models -- one shared between AML and reference cells, and another containing signals separating the two.
+```{R, warning = FALSE, message = FALSE}
+library(philentropy)
+library(dendextend)
+d <- philentropy::distance(t(nmf_model@h[1:3, ]), method = "jaccard")
+cluster_obj <- hclust(as.dist(d))
+cluster_obj$labels <- colnames(nmf_model@h)
+colnames(nmf_model@h) <- paste0("cluster_", dendextend::cutree(cluster_obj, k = 3))
+p2 <- plot_umap(nmf_model[1:3], n_neighbors = 10, metric = "cosine") +
+  ggtitle("agglomerative clustering\non jaccard distance") +
+  theme(plot.title = element_text(hjust = 0.5), aspect.ratio = 1)
+
+```
+
+Cluster with graph-based clustering:
+
+```{R}
+clusters <- cluster_nmf(nmf_model[1:3], aml, resolution = 0.2)
+colnames(nmf_model@h) <- paste0("cluster", clusters)
+p3 <- plot_umap(nmf_model[1:3], n_neighbors = 10, metric = "cosine") +
+  ggtitle("graph-based\npartitioning") +
+  theme(plot.title = element_text(hjust = 0.5), aspect.ratio = 1)
+```
+
+```{R, fig.width = 9, fig.height = 3, message = FALSE, warning = FALSE}
+plot_grid(
+  p1 + theme(legend.position = "none"), NULL, 
+  p2 + theme(legend.position = "none"), NULL, 
+  p3 + theme(legend.position = "none"), NULL, 
+  get_legend(p1), 
+  nrow = 1, rel_widths = c(1, 0.4, 1, 0.4, 1, 0.4, 0.4))
+```
+

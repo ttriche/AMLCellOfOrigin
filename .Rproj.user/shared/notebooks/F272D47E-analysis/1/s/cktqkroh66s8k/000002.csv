@@ -1,1 +1,0 @@
-"0","nmf5 <- nmf(aml, k = 5, seed = 1:10, tol = 1e-10)"

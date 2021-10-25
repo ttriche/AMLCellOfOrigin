@@ -1,4 +1,0 @@
-"0","cv <- crossValidate(aml, 2:15, seed = 123, reps = 5)"
-"0","plot(cv) + "
-"0","  theme(aspect.ratio = 1) + scale_y_continuous(limits = c(0.02, 0.03)) +"
-"0","  stat_smooth(se = F, color = ""black"")"

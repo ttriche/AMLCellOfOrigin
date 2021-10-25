@@ -1,3 +1,0 @@
-"0","sample_representation <- summary(nmf5, group_by = colnames(aml), stat = ""mean"")"
-"0","plot(sample_representation) +"
-"0","  scale_fill_manual(values = c(""gray"", ""#F8766D"", ""#C77CFF"", ""#7CAE00""))"

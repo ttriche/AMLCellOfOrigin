@@ -1,4 +1,0 @@
-"0","nmf10 <- nmf(aml, k = 10, seed = 123)"
-"0","plot(summary(nmf10, group_by = colnames(aml), stat = ""mean"")) +"
-"0","  scale_fill_manual(values = c(""gray"", ""#F8766D"", ""#C77CFF"", ""#7CAE00"")) +"
-"0","  theme(aspect.ratio = 1)"
